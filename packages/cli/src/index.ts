@@ -401,6 +401,18 @@ function writeOutputOrFile(content: string, outPath?: string): void {
   }
 }
 
+// Filter presentation only: scores, totals and strict exit decisions still use every diagnostic.
+function errorsOnlyReport(report: PreFlightReport): PreFlightReport {
+  const { autoFixPreview: _preview, ...summary } = report;
+  return {
+    ...summary,
+    platforms: report.platforms.map((platform) => ({
+      ...platform,
+      diagnostics: platform.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
+    })),
+  };
+}
+
 function handleCheckCommand(args: string[], config: LoadedConfig): number {
   const parsed = parseArgs({
     args,
@@ -410,6 +422,7 @@ function handleCheckCommand(args: string[], config: LoadedConfig): number {
       format: { type: 'string', short: 'f', default: 'pretty' },
       fix: { type: 'boolean', default: false },
       strict: { type: 'boolean', default: false },
+      quiet: { type: 'boolean', default: false },
       api: { type: 'boolean', default: false },
       sponsored: { type: 'boolean', default: false },
       out: { type: 'string', short: 'o' },
@@ -419,7 +432,7 @@ function handleCheckCommand(args: string[], config: LoadedConfig): number {
   const targetPath = parsed.positionals[0];
   if (!targetPath) {
     throw new Error(
-      'Usage: postflight check <file-or-dir> [--targets x,linkedin,...] [--format pretty|json|sarif|markdown] [--fix] [--strict] [--api] [--sponsored] [--out <file>]'
+      'Usage: postflight check <file-or-dir> [--targets x,linkedin,...] [--format pretty|json|sarif|markdown] [--fix] [--strict] [--quiet] [--api] [--sponsored] [--out <file>]'
     );
   }
 
@@ -433,6 +446,7 @@ function handleCheckCommand(args: string[], config: LoadedConfig): number {
   const cliTargets = parseTargetsOption(parsed.values.targets);
   const fix = Boolean(parsed.values.fix);
   const strict = Boolean(parsed.values.strict);
+  const quiet = Boolean(parsed.values.quiet);
   const api = Boolean(parsed.values.api);
   const sponsored = Boolean(parsed.values.sponsored);
   const outPath = parsed.values.out;
@@ -498,11 +512,18 @@ function handleCheckCommand(args: string[], config: LoadedConfig): number {
       });
     }
 
-    const duplicates = detectDuplicatesAndCannibalization(duplicateInputs);
+    const duplicates = quiet ? [] : detectDuplicatesAndCannibalization(duplicateInputs);
     const totalErrors = fileResults.reduce((acc, r) => acc + r.report.totalErrors, 0);
     const totalWarnings = fileResults.reduce((acc, r) => acc + r.report.totalWarnings, 0);
     const totalInfos = fileResults.reduce((acc, r) => acc + r.report.totalInfos, 0);
     const passed = totalErrors === 0 && (!strict || totalWarnings === 0);
+
+    if (quiet) {
+      for (const entry of fileResults) {
+        entry.report = errorsOnlyReport(entry.report);
+        entry.appliedFixes = [];
+      }
+    }
 
     let output: string;
     if (format === 'json') {
@@ -593,13 +614,14 @@ function handleCheckCommand(args: string[], config: LoadedConfig): number {
     }
   }
 
-  const report = runPreFlight(draft, effectiveTargets, baseGuardrails);
-  const passed = report.totalErrors === 0 && (!strict || report.totalWarnings === 0);
+  const fullReport = runPreFlight(draft, effectiveTargets, baseGuardrails);
+  const passed = fullReport.totalErrors === 0 && (!strict || fullReport.totalWarnings === 0);
+  const report = quiet ? errorsOnlyReport(fullReport) : fullReport;
 
   let output: string;
   if (format === 'json') {
     output = JSON.stringify(
-      fix ? { ...report, fixed: appliedFixes.length > 0, appliedFixes } : report,
+      fix ? { ...report, fixed: appliedFixes.length > 0, appliedFixes: quiet ? [] : appliedFixes } : report,
       null,
       2
     );
@@ -609,7 +631,7 @@ function handleCheckCommand(args: string[], config: LoadedConfig): number {
     output = formatPreFlightMarkdown(report, relLabel);
   } else {
     const prefix =
-      fix && appliedFixes.length > 0
+      quiet ? '' : fix && appliedFixes.length > 0
         ? `Applied ${appliedFixes.length} auto-fix(es) to ${relLabel}:\n` +
           appliedFixes.map((a) => `  + ${a}`).join('\n') +
           '\n\n'
@@ -1321,7 +1343,7 @@ Usage:
 Commands:
   check <file-or-dir>       Lint a draft (.md/.txt/.json) or campaign directory (+ duplicate scan)
                               Flags: --targets <csv>, --format pretty|json|sarif|markdown,
-                                     --fix, --strict, --api, --sponsored, --out <file>
+                                     --fix, --strict, --quiet, --api, --sponsored, --out <file>
   compile <file.md>         Compile 1 canonical Markdown post into platform-native threads & facets
                               Flags: --targets <csv>, --out <dir>, --format pretty|json
   safezone                  Check 2D pixel collisions against platform UI dead zones (16 presets)
