@@ -254,6 +254,7 @@ Everyone participating is expected to follow the [Code of Conduct](CODE_OF_CONDU
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Design principles, module layout, browser/Node parity |
 | [docs/RULES.md](docs/RULES.md) | All 77 rules, grouped by category (generated) |
 | [docs/MCP_INTEGRATION.md](docs/MCP_INTEGRATION.md) | MCP setup for Claude Code, Cursor, Windsurf |
+| [docs/CI_RECIPES.md](docs/CI_RECIPES.md) | Run PostFlight before committing campaign drafts |
 | [docs/GOOD_FIRST_ISSUES.md](docs/GOOD_FIRST_ISSUES.md) | Scoped starter tasks with exact file paths |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
