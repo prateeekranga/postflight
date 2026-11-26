@@ -116,4 +116,44 @@ describe('@postflight/cli — Integration Tests', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it('killswitch verify rejects a ledger whose history has been edited', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'postflight-ks-tamper-'));
+    const ledgerPath = path.join(tmpDir, '.postflight', 'killswitch.json');
+    try {
+      assert.equal(runCliProc(['killswitch', 'freeze', '--actor', 'ci-test', '--reason', 'Outage', '--dir', tmpDir]).code, 0);
+      assert.equal(runCliProc(['killswitch', 'resume', '--actor', 'ci-test', '--reason', 'Resolved', '--dir', tmpDir]).code, 0);
+      assert.equal(runCliProc(['killswitch', 'freeze', '--actor', 'ci-test', '--reason', 'Brand hold', '--dir', tmpDir]).code, 0);
+
+      const intact = runCliProc(['killswitch', 'verify', '--dir', tmpDir, '--format', 'json']);
+      assert.equal(intact.code, 0, `Expected intact ledger to verify, stderr: ${intact.stderr}`);
+      assert.deepEqual(JSON.parse(intact.stdout).chain, { valid: true, brokenAtSeq: null });
+
+      const original = fs.readFileSync(ledgerPath, 'utf8');
+      const ledger = JSON.parse(original);
+      assert.equal(ledger.auditLog.length, 3);
+
+      // Rewrite who resumed publishing, leaving the stored hashes untouched.
+      ledger.auditLog[1].actor = 'someone-else';
+      fs.writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8');
+
+      const tampered = runCliProc(['killswitch', 'verify', '--dir', tmpDir, '--format', 'json']);
+      assert.equal(tampered.code, 1, 'Expected verify to exit 1 on a tampered ledger');
+      assert.deepEqual(JSON.parse(tampered.stdout).chain, { valid: false, brokenAtSeq: 2 });
+
+      const pretty = runCliProc(['killswitch', 'verify', '--dir', tmpDir]);
+      assert.equal(pretty.code, 1);
+      assert.match(pretty.stdout, /BROKEN at seq #2/);
+
+      // Deleting an entry from the middle of the history is also rejected.
+      const truncated = JSON.parse(original);
+      truncated.auditLog.splice(1, 1);
+      fs.writeFileSync(ledgerPath, `${JSON.stringify(truncated, null, 2)}\n`, 'utf8');
+      const deleted = runCliProc(['killswitch', 'verify', '--dir', tmpDir, '--format', 'json']);
+      assert.equal(deleted.code, 1, 'Expected verify to exit 1 when an entry is removed');
+      assert.equal(JSON.parse(deleted.stdout).chain.valid, false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

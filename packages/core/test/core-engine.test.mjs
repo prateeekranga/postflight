@@ -26,6 +26,7 @@ import {
   createKillSwitchState,
   activateKillSwitch,
   releaseKillSwitch,
+  recordGovernanceEvent,
   verifyAuditChain,
   canPublish,
   parseCanonicalMarkdown,
@@ -308,6 +309,53 @@ describe('@postflight/core — Media, OG, WCAG, FFmpeg, Attribution, Intelligenc
     const check = verifyAuditChain(tampered);
     assert.equal(check.valid, false);
     assert.equal(check.brokenAtSeq, 1);
+  });
+
+  it('rejects every kind of edit to Kill-Switch ledger history', () => {
+    let state = createKillSwitchState();
+    state = activateKillSwitch(state, 'oncall-sre', 'Production outage P1', '2026-11-25T08:00:00Z');
+    state = releaseKillSwitch(state, 'oncall-sre', 'Incident resolved', '2026-11-25T09:00:00Z');
+    state = activateKillSwitch(state, 'comms-lead', 'Brand safety hold', '2026-11-25T10:00:00Z');
+    const ledger = state.auditLog;
+    assert.equal(ledger.length, 3);
+    assert.deepEqual(verifyAuditChain(ledger), { valid: true, brokenAtSeq: null });
+    assert.deepEqual(verifyAuditChain([]), { valid: true, brokenAtSeq: null });
+
+    const expectBroken = (label, mutate, brokenAtSeq) => {
+      const copy = structuredClone(ledger);
+      const edited = mutate(copy) ?? copy;
+      const check = verifyAuditChain(edited);
+      assert.equal(check.valid, false, `${label}: tampered ledger must not verify`);
+      assert.equal(check.brokenAtSeq, brokenAtSeq, `${label}: wrong brokenAtSeq`);
+    };
+
+    // Editing any hashed field of a middle entry breaks the chain at that entry.
+    expectBroken('actor', (l) => { l[1].actor = 'attacker'; }, 2);
+    expectBroken('timestamp', (l) => { l[1].timestamp = '2026-11-25T08:30:00Z'; }, 2);
+    expectBroken('action', (l) => { l[1].action = 'KILL_SWITCH_ACTIVATED'; }, 2);
+    expectBroken('reason', (l) => { l[2].reason = 'Nothing to see here'; }, 3);
+    expectBroken('targetId added', (l) => { l[1].targetId = 'post-42'; }, 2);
+    expectBroken('hash', (l) => { l[2].hash = 'f'.repeat(64); }, 3);
+    expectBroken('prevHash', (l) => { l[1].prevHash = '0'.repeat(64); }, 2);
+    expectBroken('seq', (l) => { l[2].seq = 4; }, 4);
+
+    // Re-hashing the edited entry does not help: the next entry's prevHash no longer matches.
+    expectBroken('re-hashed forgery', (l) => {
+      const forged = recordGovernanceEvent(createKillSwitchState(), {
+        actor: l[0].actor,
+        action: l[0].action,
+        reason: 'Routine drill',
+        timestamp: l[0].timestamp,
+      }).auditLog[0];
+      assert.deepEqual(verifyAuditChain([forged]), { valid: true, brokenAtSeq: null });
+      l[0] = forged;
+    }, 2);
+
+    // Structural edits: deleting, reordering or duplicating entries.
+    expectBroken('deleted first entry', (l) => l.slice(1), 2);
+    expectBroken('deleted middle entry', (l) => [l[0], l[2]], 3);
+    expectBroken('swapped entries', (l) => [l[0], l[2], l[1]], 3);
+    expectBroken('duplicated entry', (l) => [l[0], l[1], l[1], l[2]], 2);
   });
 
   it('compiles 1 canonical Markdown post cleanly across all 9 platforms', () => {
