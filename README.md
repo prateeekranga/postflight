@@ -206,7 +206,7 @@ console.log(report.overallScore, report.overallGrade, report.totalErrors);
 
 | Command | What it does |
 | :--- | :--- |
-| `postflight check <file-or-dir>` | Lint drafts or whole campaign folders (`--targets`, `--format pretty\|json\|sarif\|markdown`, `--fix`, `--strict`, `--api`, `--sponsored`) |
+| `postflight check <file-or-dir>` | Lint drafts or whole campaign folders (`--targets`, `--format pretty\|json\|sarif\|markdown`, `--fix`, `--strict`, `--quiet`, `--api`, `--sponsored`) |
 | `postflight compile <post.md>` | Compile canonical Markdown + YAML into native threads, Bluesky facets, and UTM bundles |
 | `postflight safezone --preset <id> --box x,y,w,h:label` | 2D collision math across 16 presets (`--list` to inspect them) |
 | `postflight utm --url <url> --platform <id> --campaign <slug>` | Audit UTM hygiene, strip `fbclid`/`gclid`, build clean dark-social URLs |
@@ -260,3 +260,7 @@ Everyone participating is expected to follow the [Code of Conduct](CODE_OF_CONDU
 ## License
 
 [MIT](LICENSE) — free for creators, developers, agencies, and commercial embedding.
+
+### Error-only check diagnostics
+
+`postflight check <file-or-dir> --quiet` suppresses warning and info diagnostics in pretty, Markdown, JSON and SARIF reports, including `--out` files. It also hides advisory duplicate reports and auto-fix descriptions. Summary counts, scores, pass/fail decisions and exit codes still reflect the complete check; `--quiet --strict` still fails on warnings. `--fix` still applies fixes. Without `--quiet`, output is unchanged.
