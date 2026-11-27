@@ -55,6 +55,7 @@ import {
   formatTokensPretty,
   formatTriagePretty,
   formatUtmPretty,
+  stripAnsi,
 } from './formatters.js';
 import {
   loadKillSwitchState,
@@ -394,7 +395,7 @@ function writeOutputOrFile(content: string, outPath?: string): void {
   if (outPath) {
     const resolved = path.resolve(outPath);
     fs.mkdirSync(path.dirname(resolved), { recursive: true });
-    fs.writeFileSync(resolved, content.endsWith('\n') ? content : `${content}\n`, 'utf8');
+    fs.writeFileSync(resolved, stripAnsi(content.endsWith('\n') ? content : `${content}\n`), 'utf8');
     writeErr(`Wrote output to ${resolved}`);
   } else {
     writeOut(content);
